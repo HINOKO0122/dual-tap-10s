@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DUAL TAP 10s | 反射神経・交互タップゲーム</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Plus Jakarta Sans & Noto Sans JP & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;800&family=Noto+Sans+JP:wght@500;700;900&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        /* 基本リセットとタッチ操作の最適化 */
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100dvh;
+            overflow: hidden;
+            touch-action: manipulation;
+            font-family: 'Plus Jakarta Sans', 'Noto Sans JP', sans-serif;
+            background-color: #f8fafc;
+            color: #0f172a;
+        }
+
+        .font-mono-num {
+            font-family: 'JetBrains Mono', monospace;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* ターゲット円のスタイルとトランジション */
+        .target-circle {
+            position: absolute;
+            border-radius: 9999px;
+            transform: translate(-50%, -50%);
+            transition: transform 0.14s cubic-bezier(0.34, 1.56, 0.64, 1),
+                        background-color 0.12s ease,
+                        box-shadow 0.12s ease,
+                        opacity 0.12s ease;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* 濃い円（アクティブ：押せる状態） */
+        .circle-active-left {
+            background: radial-gradient(circle at 32% 32%, #3b82f6, #1d4ed8);
+            box-shadow: 0 12px 28px -4px rgba(29, 78, 216, 0.55),
+                        inset 0 2px 6px rgba(255, 255, 255, 0.45);
+            border: 3px solid #ffffff;
+            transform: translate(-50%, -50%) scale(1);
+            z-index: 20;
+        }
+        .circle-active-left::after {
+            content: '';
+            position: absolute;
+            inset: -8px;
+            border-radius: 9999px;
+            border: 2px solid rgba(59, 130, 246, 0.45);
+            animation: pulseRing 1.1s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+            pointer-events: none;
+        }
+
+        .circle-active-right {
+            background: radial-gradient(circle at 32% 32%, #f43f5e, #be123c);
+            box-shadow: 0 12px 28px -4px rgba(190, 18, 60, 0.55),
+                        inset 0 2px 6px rgba(255, 255, 255, 0.45);
+            border: 3px solid #ffffff;
+            transform: translate(-50%, -50%) scale(1);
+            z-index: 20;
+        }
+        .circle-active-right::after {
+            content: '';
+            position: absolute;
+            inset: -8px;
+            border-radius: 9999px;
+            border: 2px solid rgba(244, 63, 94, 0.45);
+            animation: pulseRing 1.1s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+            pointer-events: none;
+        }
+
+        /* 薄い円（待機：押せない状態） */
+        .circle-inactive-left {
+            background-color: rgba(59, 130, 246, 0.16);
+            border: 2px dashed rgba(59, 130, 246, 0.42);
+            box-shadow: none;
+            transform: translate(-50%, -50%) scale(0.86);
+            z-index: 10;
+        }
+
+        .circle-inactive-right {
+            background-color: rgba(244, 63, 94, 0.16);
+            border: 2px dashed rgba(244, 63, 94, 0.42);
+            box-shadow: none;
+            transform: translate(-50%, -50%) scale(0.86);
+            z-index: 10;
+        }
+
+        @keyframes pulseRing {
+            0% { transform: scale(0.95); opacity: 0.9; }
+            100% { transform: scale(1.28); opacity: 0; }
+        }
+
+        /* ヒット時の波紋エフェクト */
+        .hit-ripple {
+            position: absolute;
+            border-radius: 9999px;
+            transform: translate(-50%, -50%) scale(0.8);
+            pointer-events: none;
+            animation: rippleExpand 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            z-index: 25;
+        }
+
+        @keyframes rippleExpand {
+            0% {
+                transform: translate(-50%, -50%) scale(0.85);
+                opacity: 0.85;
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(2.1);
+                opacity: 0;
+            }
+        }
+
+        /* フローティングスコア (+1 / -1) */
+        .float-feedback {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            font-weight: 800;
+            animation: floatUp 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            z-index: 40;
+            text-shadow: 0 2px 8px rgba(255,255,255,0.9);
+        }
+
+        @keyframes floatUp {
+            0% {
+                opacity: 1;
+                transform: translate(-50%, -30%) scale(0.85);
+            }
+            40% {
+                opacity: 1;
+                transform: translate(-50%, -95%) scale(1.1);
+            }
+            100% {
+                opacity: 0;
+                transform: translate(-50%, -145%) scale(1);
+            }
+        }
+
+        /* ミス時の画面シェイク＆赤フラッシュ */
+        @keyframes screenShake {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-7px); }
+            40% { transform: translateX(7px); }
+            60% { transform: translateX(-5px); }
+            80% { transform: translateX(5px); }
+        }
+
+        .animate-shake {
+            animation: screenShake 0.28s ease-in-out;
+        }
+
+        /* カウントダウン数字アニメーション */
+        @keyframes countPop {
+            0% {
+                transform: scale(0.45);
+                opacity: 0;
+            }
+            25% {
+                transform: scale(1.12);
+                opacity: 1;
+            }
+            80% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(0.92);
+                opacity: 0;
+            }
+        }
+
+        .animate-count {
+            animation: countPop 0.95s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        /* カスタムスクロールバー（ランキングモーダル用） */
+        .custom-scroll::-webkit-scrollbar {
+            width: 5px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+
+        /* スマホ回転誘導アイコンのアニメーション */
+        @keyframes rotatePhone {
+            0%, 15% { transform: rotate(0deg); }
+            45%, 75% { transform: rotate(-90deg); }
+            90%, 100% { transform: rotate(0deg); }
+        }
+        .animate-rotate-phone {
+            animation: rotatePhone 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+
+        /* セーフエリア（ノッチ・ホームバー）対応 */
+        .safe-header {
+            padding-left: max(0.75rem, env(safe-area-inset-left));
+            padding-right: max(0.75rem, env(safe-area-inset-right));
+        }
+
+        /* スマホ横画面（高さが低い画面）向けのコンパクトUI最適化 */
+        @media (max-height: 500px) and (orientation: landscape) {
+            .landscape-compact-header {
+                height: 2.75rem !important;
+            }
+            .landscape-compact-card {
+                padding: 1rem 1.25rem !important;
+                max-width: 34rem !important;
+            }
+            .landscape-hide-desc {
+                display: none !important;
+            }
+            .landscape-compact-grid {
+                margin-top: 0.625rem !important;
+                padding: 0.5rem !important;
+            }
+            .landscape-compact-btn {
+                margin-top: 0.75rem !important;
+                padding-top: 0.625rem !important;
+                padding-bottom: 0.625rem !important;
+                font-size: 1rem !important;
+            }
+            .landscape-countdown-num {
+                font-size: 5rem !important;
+            }
+        }
+    </style>
+</head>
+<body class="relative flex flex-col select-none bg-slate-50 text-slate-900">
+
+    <!-- ミス時の赤フラッシュオーバーレイ -->
+    <div id="miss-flash" class="pointer-events-none fixed inset-0 z-30 bg-rose-500/0 transition-colors duration-150"></div>
+
+    <!-- 縦画面ブロック＆横向き誘導オーバーレイ（最前面） -->
+    <div id="orientation-overlay" class="hidden fixed inset-0 z-[100] flex flex-col items-center justify-center p-6 bg-slate-950/92 backdrop-blur-md text-white text-center">
+        <div class="relative mb-6 flex items-center justify-center w-24 h-24 rounded-3xl bg-white/10 border border-white/15 shadow-2xl">
+            <svg class="w-12 h-12 text-indigo-400 animate-rotate-phone" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <rect x="7" y="2" width="10" height="20" rx="2.5" ry="2.5"/>
+                <line x1="12" y1="18" x2="12.01" y2="18" stroke-width="2.5" stroke-linecap="round"/>
+            </svg>
+        </div>
+        <span class="px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-xs font-extrabold tracking-widest uppercase">
+            ROTATE TO LANDSCAPE
+        </span>
+        <h2 class="mt-3 text-xl sm:text-2xl font-black tracking-tight">
+            端末を横向きにしてください
+        </h2>
+        <p class="mt-2 max-w-xs text-xs sm:text-sm text-slate-300 leading-relaxed">
+            左右のエリアを両手で素早くタップするため、横画面でのプレイに対応しています。
+        </p>
+        <button id="btn-fullscreen-lock" type="button"
+            class="mt-6 px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-extrabold text-sm shadow-lg shadow-indigo-500/30 transition cursor-pointer">
+            横画面でフルスクリーン起動
+        </button>
+        <button id="btn-dismiss-orientation" type="button"
+            class="mt-5 text-xs font-medium text-slate-400 hover:text-slate-200 underline underline-offset-4 cursor-pointer">
+            このまま続行（PC等）
+        </button>
+    </div>
+
+    <!-- 上部HUDヘッダー -->
+    <header class="relative z-20 flex-none bg-white/90 backdrop-blur-md border-b border-slate-200/80 shadow-xs">
+        <!-- 残り時間プログレスバー -->
+        <div class="w-full h-1.5 bg-slate-100 overflow-hidden">
+            <div id="time-bar" class="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-rose-500 transition-none" style="width: 100%;"></div>
+        </div>
+
+        <div class="safe-header landscape-compact-header max-w-5xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
+            <!-- 左：タイトルロゴ＆音ON/OFF -->
+            <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+                <div class="flex items-center gap-1.5">
+                    <span class="inline-block w-3 h-3 rounded-full bg-blue-600"></span>
+                    <span class="inline-block w-3 h-3 rounded-full bg-rose-500"></span>
+                </div>
+                <h1 class="font-extrabold tracking-tight text-sm sm:text-lg text-slate-900 truncate">
+                    DUAL TAP <span class="text-indigo-600">10s</span>
+                </h1>
+                <button id="btn-sound" type="button" aria-label="サウンド切替"
+                    class="ml-1 p-2 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 transition">
+                    <!-- Sound ON Icon -->
+                    <svg id="icon-sound-on" class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11 5L6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 010 7.07M19.07 4.93a10 10 0 010 14.14"/>
+                    </svg>
+                    <!-- Sound OFF Icon -->
+                    <svg id="icon-sound-off" class="w-4 h-4 sm:w-5 sm:h-5 hidden text-slate-400" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11 5L6 9H2v6h4l5 4V5zM23 9l-6 6M17 9l6 6"/>
+                    </svg>
+                </button>
+                <button id="btn-fullscreen" type="button" aria-label="フルスクリーン切替" title="フルスクリーン切替"
+                    class="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 transition">
+                    <svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- 中央：タイマー＆スコア表示 -->
+            <div class="flex items-center gap-3 sm:gap-6">
+                <div class="flex flex-col items-center">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 leading-none">TIME</span>
+                    <span id="hud-time" class="font-mono-num text-lg sm:text-2xl font-extrabold text-slate-900 leading-tight">10.00</span>
+                </div>
+                <div class="h-7 w-px bg-slate-200"></div>
+                <div class="flex flex-col items-center">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 leading-none">SCORE</span>
+                    <span id="hud-score" class="font-mono-num text-xl sm:text-3xl font-extrabold text-indigo-600 leading-tight">0</span>
+                </div>
+            </div>
+
+            <!-- 右：ランキングボタン / 中断ボタン -->
+            <div class="flex items-center gap-1.5 sm:gap-2">
+                <button id="btn-abort" type="button"
+                    class="hidden px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 active:scale-95 transition">
+                    やり直す
+                </button>
+                <button id="btn-open-ranking" type="button"
+                    class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200/80 active:scale-95 transition">
+                    <svg class="w-4 h-4 text-amber-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                    </svg>
+                    <span class="hidden xs:inline sm:inline">ランキング</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- メインプレイフィールド（左右2分割エリア） -->
+    <main id="playfield" class="relative flex-1 w-full grid grid-cols-2 overflow-hidden">
+        <!-- 左エリア -->
+        <section id="zone-left" class="relative h-full w-full bg-gradient-to-br from-blue-50/70 via-slate-50 to-blue-100/40 overflow-hidden">
+            <div class="pointer-events-none absolute top-3 left-3 sm:top-4 sm:left-5 flex items-center gap-1.5 opacity-45">
+                <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+                <span class="text-[11px] sm:text-xs font-extrabold tracking-widest text-blue-900">LEFT</span>
+            </div>
+            <!-- 左側の円 -->
+            <div id="circle-left" class="target-circle circle-inactive-left hidden"></div>
+        </section>
+
+        <!-- 中央境界線 -->
+        <div class="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-slate-300/90 z-10 flex flex-col items-center justify-center">
+            <div class="w-6 h-6 rounded-full bg-white border border-slate-300 shadow-xs flex items-center justify-center">
+                <div class="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
+            </div>
+        </div>
+
+        <!-- 右エリア -->
+        <section id="zone-right" class="relative h-full w-full bg-gradient-to-bl from-rose-50/70 via-slate-50 to-rose-100/40 overflow-hidden">
+            <div class="pointer-events-none absolute top-3 right-3 sm:top-4 sm:right-5 flex items-center gap-1.5 opacity-45">
+                <span class="text-[11px] sm:text-xs font-extrabold tracking-widest text-rose-900">RIGHT</span>
+                <span class="w-2 h-2 rounded-full bg-rose-600"></span>
+            </div>
+            <!-- 右側の円 -->
+            <div id="circle-right" class="target-circle circle-inactive-right hidden"></div>
+        </section>
+
+        <!-- エフェクト・パーティクルレイヤー -->
+        <div id="fx-layer" class="pointer-events-none absolute inset-0 z-30 overflow-hidden"></div>
+
+        <!-- 3秒カウントダウン用 透明度70%白オーバーレイ -->
+        <div id="countdown-overlay"
+            class="hidden fixed inset-0 z-40 flex flex-col items-center justify-center"
+            style="background-color: rgba(255, 255, 255, 0.70);">
+            <div id="countdown-number" class="landscape-countdown-num font-mono-num text-8xl sm:text-9xl font-extrabold text-slate-900 drop-shadow-sm">
+                3
+            </div>
+            <p class="mt-2 sm:mt-3 px-4 py-1.5 rounded-full bg-slate-900/85 text-white text-xs sm:text-sm font-bold tracking-wide shadow-sm">
+                濃い円の位置を確認！
+            </p>
+        </div>
+
+        <!-- スタート画面オーバーレイ -->
+        <div id="start-overlay" class="absolute inset-0 z-30 flex items-center justify-center p-3 sm:p-4 bg-slate-900/20 backdrop-blur-[2px]">
+            <div class="landscape-compact-card w-full max-w-md bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl border border-slate-200/80 p-5 sm:p-8 text-center">
+                <div class="inline-flex items-center gap-2 px-3 py-0.5 sm:py-1 rounded-full bg-indigo-50 text-indigo-700 text-[10px] sm:text-xs font-extrabold tracking-wider uppercase mb-1.5 sm:mb-3">
+                    <span>10 SECONDS SPEED CHALLENGE</span>
+                </div>
+                <h2 class="text-xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                    左右交互に<span class="text-indigo-600">濃い円</span>をタップ！
+                </h2>
+                <p class="landscape-hide-desc mt-2 text-xs sm:text-sm text-slate-500 leading-relaxed">
+                    左右に1つずつ円が出現します。<strong class="text-slate-700">濃い色の円</strong>だけをタップすると、反対側の薄い円が濃い円に変化！10秒間でハイスコアを目指そう。
+                </p>
+
+                <!-- ルール図解ミニカード -->
+                <div class="landscape-compact-grid mt-4 sm:mt-5 grid grid-cols-3 gap-2 text-left bg-slate-50 rounded-2xl p-2.5 sm:p-3 border border-slate-100">
+                    <div class="flex flex-col items-center text-center p-1">
+                        <div class="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-rose-600 border-2 border-white shadow-sm mb-1"></div>
+                        <span class="text-[10px] sm:text-[11px] font-bold text-slate-800">濃い円をタップ</span>
+                        <span class="text-[10px] text-emerald-600 font-bold">+1 点</span>
+                    </div>
+                    <div class="flex flex-col items-center text-center p-1">
+                        <div class="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-blue-500/20 border-2 border-dashed border-blue-400 mb-1"></div>
+                        <span class="text-[10px] sm:text-[11px] font-bold text-slate-800">薄い円は待機</span>
+                        <span class="text-[10px] text-slate-400 font-medium">押すとミス</span>
+                    </div>
+                    <div class="flex flex-col items-center text-center p-1">
+                        <div class="w-6 h-6 sm:w-8 sm:h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center font-black text-xs mb-1">✕</div>
+                        <span class="text-[10px] sm:text-[11px] font-bold text-slate-800">枠外タップ</span>
+                        <span class="text-[10px] text-rose-600 font-bold">-1 点ペナルティ</span>
+                    </div>
+                </div>
+
+                <!-- スタートボタン -->
+                <button id="btn-start" type="button"
+                    class="landscape-compact-btn mt-5 sm:mt-6 w-full py-3.5 sm:py-4 px-6 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-rose-600 hover:brightness-110 active:scale-[0.98] text-white font-black text-lg sm:text-xl tracking-wide shadow-lg shadow-indigo-500/30 transition cursor-pointer">
+                    START
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- リザルトモーダル -->
+    <div id="result-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs">
+        <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 p-4 sm:p-7 max-h-[94dvh] overflow-y-auto custom-scroll">
+            <div class="text-center">
+                <span class="inline-block px-3 py-0.5 sm:py-1 rounded-full bg-indigo-50 text-indigo-600 text-[11px] sm:text-xs font-extrabold tracking-widest uppercase">
+                    TIME UP!
+                </span>
+                <div class="mt-1 sm:mt-2 flex items-baseline justify-center gap-1.5">
+                    <span id="res-score" class="font-mono-num text-4xl sm:text-6xl font-black text-slate-900">0</span>
+                    <span class="text-sm sm:text-base font-extrabold text-slate-400">PTS</span>
+                </div>
+                <p id="res-rank-comment" class="mt-0.5 sm:mt-1 text-xs sm:text-sm font-bold text-indigo-600">
+                    ナイス反射神経！
+                </p>
+            </div>
+
+            <!-- スタッツ詳細 -->
+            <div class="mt-3 sm:mt-5 grid grid-cols-4 sm:grid-cols-2 gap-1.5 sm:gap-2.5">
+                <div class="bg-slate-50 rounded-xl sm:rounded-2xl p-2 sm:p-3 border border-slate-100 text-center">
+                    <span class="block text-[10px] sm:text-[11px] font-bold text-slate-400">有効タップ</span>
+                    <span id="res-hits" class="font-mono-num text-base sm:text-xl font-extrabold text-emerald-600">0</span>
+                </div>
+                <div class="bg-slate-50 rounded-xl sm:rounded-2xl p-2 sm:p-3 border border-slate-100 text-center">
+                    <span class="block text-[10px] sm:text-[11px] font-bold text-slate-400">ミス (-1pt)</span>
+                    <span id="res-misses" class="font-mono-num text-base sm:text-xl font-extrabold text-rose-600">0</span>
+                </div>
+                <div class="bg-slate-50 rounded-xl sm:rounded-2xl p-2 sm:p-3 border border-slate-100 text-center">
+                    <span class="block text-[10px] sm:text-[11px] font-bold text-slate-400">正確率</span>
+                    <span id="res-accuracy" class="font-mono-num text-base sm:text-xl font-extrabold text-slate-800">0%</span>
+                </div>
+                <div class="bg-slate-50 rounded-xl sm:rounded-2xl p-2 sm:p-3 border border-slate-100 text-center">
+                    <span class="block text-[10px] sm:text-[11px] font-bold text-slate-400">平均速度</span>
+                    <span id="res-tps" class="font-mono-num text-base sm:text-xl font-extrabold text-indigo-600">0.0/秒</span>
+                </div>
+            </div>
+
+            <!-- オンラインランキング登録フォーム -->
+            <div class="mt-3 sm:mt-5 p-3 sm:p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80">
+                <label for="player-name-input" class="block text-[11px] sm:text-xs font-extrabold text-amber-900 mb-1 sm:mb-1.5">
+                    オンラインランキングにスコアを登録
+                </label>
+                <div class="flex gap-2">
+                    <input id="player-name-input" type="text" maxlength="14" placeholder="プレイヤー名 (最大14文字)"
+                        class="flex-1 min-w-0 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl bg-white border border-amber-300 text-xs sm:text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500">
+                    <button id="btn-submit-score" type="button"
+                        class="shrink-0 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-extrabold text-xs sm:text-sm shadow-sm transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                        登録する
+                    </button>
+                </div>
+                <p id="submit-status" class="mt-1 text-[11px] sm:text-xs font-bold text-amber-800 hidden"></p>
+            </div>
+
+            <!-- アクションボタン -->
+            <div class="mt-3 sm:mt-5 flex flex-row gap-2">
+                <button id="btn-retry" type="button"
+                    class="flex-1 py-2.5 sm:py-3.5 px-4 sm:px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-extrabold text-sm sm:text-base shadow-md shadow-indigo-500/25 transition cursor-pointer">
+                    もう1回プレイ
+                </button>
+                <button id="btn-result-ranking" type="button"
+                    class="py-2.5 sm:py-3.5 px-4 sm:px-5 rounded-2xl bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 font-extrabold text-xs sm:text-sm transition cursor-pointer">
+                    ランキング
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- オンラインランキングモーダル -->
+    <div id="ranking-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs">
+        <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[90dvh] overflow-hidden">
+            <div class="px-5 py-3 sm:px-6 sm:py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+                <div class="flex items-center gap-2">
+                    <span class="flex items-center justify-center w-8 h-8 rounded-xl bg-amber-100 text-amber-600">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                        </svg>
+                    </span>
+                    <div>
+                        <h3 class="text-base sm:text-lg font-black text-slate-900 leading-tight">ONLINE RANKING</h3>
+                        <p class="text-[11px] font-bold text-slate-400">10秒モード リアルタイムTOP20</p>
+                    </div>
+                </div>
+                <button id="btn-close-ranking" type="button" aria-label="閉じる"
+                    class="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 active:scale-95 transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div id="ranking-list-container" class="flex-1 overflow-y-auto p-4 space-y-2 custom-scroll">
+                <div class="py-12 text-center text-sm font-bold text-slate-400">
+                    ランキングを読み込み中...
+                </div>
+            </div>
+
+            <div class="px-6 py-3.5 border-t border-slate-100 bg-slate-50/70 flex justify-end">
+                <button id="btn-close-ranking-bottom" type="button"
+                    class="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm active:scale-98 transition">
+                    閉じる
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- アプリケーションロジック & Firebase Firestore 連携 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ==========================================
+        // 1. Web Audio API 効果音エンジン
+        // ==========================================
+        class SoundEngine {
+            constructor() {
+                this.enabled = true;
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) {
+                        this.ctx = new AudioCtx();
+                    }
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            toggle() {
+                this.enabled = !this.enabled;
+                return this.enabled;
+            }
+
+            playTone(freq, type, duration, gainVal, slideFreq = null) {
+                if (!this.enabled) return;
+                this.init();
+                if (!this.ctx) return;
+
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, now);
+                if (slideFreq) {
+                    osc.frequency.exponentialRampToValueAtTime(slideFreq, now + duration);
+                }
+
+                gain.gain.setValueAtTime(gainVal, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start(now);
+                osc.stop(now + duration);
+            }
+
+            playCountdown(num) {
+                // 3, 2, 1 のカウントダウン音
+                this.playTone(num === 1 ? 587.33 : 440, 'sine', 0.16, 0.18);
+            }
+
+            playStart() {
+                // スタート合図の明るい和音風アルペジオ
+                this.playTone(587.33, 'triangle', 0.18, 0.2, 880);
+                setTimeout(() => this.playTone(880, 'sine', 0.25, 0.2), 60);
+            }
+
+            playHit(side, combo) {
+                // 左右で音程を少し変え、連続ヒットで心地よくピッチ上昇
+                const baseFreq = side === 'left' ? 523.25 : 659.25; // C5 / E5
+                const pitchBoost = Math.min(combo * 8, 220);
+                this.playTone(baseFreq + pitchBoost, 'sine', 0.11, 0.22, baseFreq + pitchBoost + 140);
+            }
+
+            playMiss() {
+                // ミス時の低いブザー音
+                this.playTone(150, 'sawtooth', 0.22, 0.18, 95);
+            }
+
+            playFinish() {
+                // 終了ホイッスル風
+                this.playTone(783.99, 'triangle', 0.15, 0.2);
+                setTimeout(() => this.playTone(659.25, 'triangle', 0.15, 0.2), 110);
+                setTimeout(() => this.playTone(523.25, 'triangle', 0.35, 0.22), 220);
+            }
+        }
+
+        const sound = new SoundEngine();
+
+        // ==========================================
+        // 2. ゲーム状態管理 & DOM要素
+        // ==========================================
+        const GAME_DURATION = 10.0; // 10秒モード固定
+        const state = {
+            phase: 'idle', // 'idle' | 'countdown' | 'playing' | 'result'
+            activeSide: 'right', // 'left' | 'right' (どちらが濃い円か)
+            score: 0,
+            hits: 0,
+            misses: 0,
+            combo: 0,
+            startTime: 0,
+            rafId: null,
+            countdownTimer: null,
+            submittedCurrentGame: false,
+            lastSubmittedId: null
+        };
+
+        // DOM要素
+        const playfield = document.getElementById('playfield');
+        const zoneLeft = document.getElementById('zone-left');
+        const zoneRight = document.getElementById('zone-right');
+        const circleLeft = document.getElementById('circle-left');
+        const circleRight = document.getElementById('circle-right');
+        const fxLayer = document.getElementById('fx-layer');
+        const missFlash = document.getElementById('miss-flash');
+
+        const hudTime = document.getElementById('hud-time');
+        const hudScore = document.getElementById('hud-score');
+        const timeBar = document.getElementById('time-bar');
+
+        const startOverlay = document.getElementById('start-overlay');
+        const countdownOverlay = document.getElementById('countdown-overlay');
+        const countdownNumber = document.getElementById('countdown-number');
+        const resultModal = document.getElementById('result-modal');
+        const rankingModal = document.getElementById('ranking-modal');
+
+        const btnStart = document.getElementById('btn-start');
+        const btnRetry = document.getElementById('btn-retry');
+        const btnAbort = document.getElementById('btn-abort');
+        const btnSound = document.getElementById('btn-sound');
+        const btnFullscreen = document.getElementById('btn-fullscreen');
+        const iconSoundOn = document.getElementById('icon-sound-on');
+        const iconSoundOff = document.getElementById('icon-sound-off');
+
+        const orientationOverlay = document.getElementById('orientation-overlay');
+        const btnFullscreenLock = document.getElementById('btn-fullscreen-lock');
+        const btnDismissOrientation = document.getElementById('btn-dismiss-orientation');
+
+        const btnOpenRanking = document.getElementById('btn-open-ranking');
+        const btnCloseRanking = document.getElementById('btn-close-ranking');
+        const btnCloseRankingBottom = document.getElementById('btn-close-ranking-bottom');
+        const btnResultRanking = document.getElementById('btn-result-ranking');
+
+        const resScore = document.getElementById('res-score');
+        const resRankComment = document.getElementById('res-rank-comment');
+        const resHits = document.getElementById('res-hits');
+        const resMisses = document.getElementById('res-misses');
+        const resAccuracy = document.getElementById('res-accuracy');
+        const resTps = document.getElementById('res-tps');
+        const playerNameInput = document.getElementById('player-name-input');
+        const btnSubmitScore = document.getElementById('btn-submit-score');
+        const submitStatus = document.getElementById('submit-status');
+        const rankingListContainer = document.getElementById('ranking-list-container');
+
+        // ==========================================
+        // 2.5 横画面ロック & 画面向き監視（モバイル最適化）
+        // ==========================================
+        let orientationDismissed = false;
+
+        async function tryLockLandscape(enterFullscreen = true) {
+            try {
+                if (enterFullscreen && !document.fullscreenElement && document.documentElement.requestFullscreen) {
+                    await document.documentElement.requestFullscreen();
+                }
+            } catch (_) {
+                // iOS Safariなどフルスクリーン非対応環境では無視
+            }
+            try {
+                if (screen.orientation && screen.orientation.lock) {
+                    await screen.orientation.lock('landscape');
+                }
+            } catch (_) {
+                // 画面向きロック非対応環境では無視
+            }
+        }
+
+        async function toggleFullscreenMode() {
+            try {
+                if (!document.fullscreenElement) {
+                    await tryLockLandscape(true);
+                } else if (document.exitFullscreen) {
+                    await document.exitFullscreen();
+                }
+            } catch (_) {}
+        }
+
+        function checkOrientationState() {
+            if (orientationDismissed) {
+                orientationOverlay.classList.add('hidden');
+                return;
+            }
+            const isPortrait = window.innerHeight > window.innerWidth;
+            const isMobileWidth = window.innerWidth < 900;
+
+            if (isPortrait && isMobileWidth) {
+                orientationOverlay.classList.remove('hidden');
+                // カウントダウン中またはプレイ中に縦向きに戻された場合は安全のため中断してリセット
+                if (state.phase === 'countdown' || state.phase === 'playing') {
+                    abortToTitle();
+                }
+            } else {
+                orientationOverlay.classList.add('hidden');
+            }
+        }
+
+        btnFullscreenLock.addEventListener('click', async () => {
+            sound.init();
+            await tryLockLandscape(true);
+            checkOrientationState();
+        });
+
+        btnDismissOrientation.addEventListener('click', () => {
+            orientationDismissed = true;
+            orientationOverlay.classList.add('hidden');
+        });
+
+        btnFullscreen.addEventListener('click', toggleFullscreenMode);
+
+        // 画面の向き・サイズ変更時にチェック
+        window.addEventListener('orientationchange', () => {
+            setTimeout(checkOrientationState, 120);
+        });
+
+        // ==========================================
+        // 3. 円の配置・見た目更新ロジック
+        // ==========================================
+        function getCircleDiameter() {
+            const rect = zoneLeft.getBoundingClientRect();
+            const minDim = Math.min(rect.width, rect.height);
+            // 横画面モバイルでも押しやすく重なりにくい適切なサイズ (52px 〜 84px)
+            return Math.max(52, Math.min(84, Math.floor(minDim * 0.25)));
+        }
+
+        function positionCircleRandomly(side, prevPos = null) {
+            const zone = side === 'left' ? zoneLeft : zoneRight;
+            const circle = side === 'left' ? circleLeft : circleRight;
+            const rect = zone.getBoundingClientRect();
+            const diameter = getCircleDiameter();
+            const radius = diameter / 2;
+
+            // 境界やセーフエリア（ノッチ・ホームバー）からはみ出さないための余白
+            const padX = radius + 22;
+            const padTop = radius + 28;
+            const padBottom = radius + 20;
+
+            const minX = padX;
+            const maxX = Math.max(minX + 10, rect.width - padX);
+            const minY = padTop;
+            const maxY = Math.max(minY + 10, rect.height - padBottom);
+
+            let x = minX + Math.random() * (maxX - minX);
+            let y = minY + Math.random() * (maxY - minY);
+
+            // 前回位置と近すぎないように最大8回まで再抽選
+            if (prevPos) {
+                for (let i = 0; i < 8; i++) {
+                    const dist = Math.hypot(x - prevPos.x, y - prevPos.y);
+                    if (dist >= diameter * 1.15) break;
+                    x = minX + Math.random() * (maxX - minX);
+                    y = minY + Math.random() * (maxY - minY);
+                }
+            }
+
+            circle.style.width = `${diameter}px`;
+            circle.style.height = `${diameter}px`;
+            circle.style.left = `${x}px`;
+            circle.style.top = `${y}px`;
+            circle.dataset.x = String(x);
+            circle.dataset.y = String(y);
+            circle.classList.remove('hidden');
+        }
+
+        function updateCircleVisuals() {
+            if (state.activeSide === 'right') {
+                circleRight.className = 'target-circle circle-active-right';
+                circleLeft.className = 'target-circle circle-inactive-left';
+            } else {
+                circleLeft.className = 'target-circle circle-active-left';
+                circleRight.className = 'target-circle circle-inactive-right';
+            }
+        }
+
+        // ==========================================
+        // 4. ヒット・ミス演出＆タップ判定処理
+        // ==========================================
+        function spawnHitRipple(side, x, y, diameter) {
+            const ripple = document.createElement('div');
+            ripple.className = 'hit-ripple';
+            ripple.style.width = `${diameter}px`;
+            ripple.style.height = `${diameter}px`;
+            ripple.style.border = side === 'left'
+                ? '4px solid rgba(59, 130, 246, 0.8)'
+                : '4px solid rgba(244, 63, 94, 0.8)';
+
+            const zoneRect = (side === 'left' ? zoneLeft : zoneRight).getBoundingClientRect();
+            const fieldRect = playfield.getBoundingClientRect();
+            ripple.style.left = `${(zoneRect.left - fieldRect.left) + x}px`;
+            ripple.style.top = `${(zoneRect.top - fieldRect.top) + y}px`;
+
+            fxLayer.appendChild(ripple);
+            setTimeout(() => ripple.remove(), 400);
+        }
+
+        function spawnFloatingText(clientX, clientY, text, isPositive) {
+            const fieldRect = playfield.getBoundingClientRect();
+            const el = document.createElement('div');
+            el.className = `float-feedback text-lg sm:text-xl ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`;
+            el.textContent = text;
+            el.style.left = `${clientX - fieldRect.left}px`;
+            el.style.top = `${clientY - fieldRect.top}px`;
+
+            fxLayer.appendChild(el);
+            setTimeout(() => el.remove(), 560);
+        }
+
+        function updateScoreHud() {
+            hudScore.textContent = String(state.score);
+            if (state.score < 0) {
+                hudScore.classList.remove('text-indigo-600');
+                hudScore.classList.add('text-rose-600');
+            } else {
+                hudScore.classList.remove('text-rose-600');
+                hudScore.classList.add('text-indigo-600');
+            }
+        }
+
+        function handleCorrectHit(side, clientX, clientY) {
+            const circle = side === 'left' ? circleLeft : circleRight;
+            const prevPos = {
+                x: parseFloat(circle.dataset.x || '0'),
+                y: parseFloat(circle.dataset.y || '0')
+            };
+            const diameter = getCircleDiameter();
+
+            state.score += 1;
+            state.hits += 1;
+            state.combo += 1;
+            updateScoreHud();
+
+            sound.playHit(side, state.combo);
+            spawnHitRipple(side, prevPos.x, prevPos.y, diameter);
+            spawnFloatingText(clientX, clientY, '+1', true);
+
+            // 反対側の薄い円を濃い円へ切り替え、今押された円は消えて別位置に薄い円として再出現
+            state.activeSide = side === 'left' ? 'right' : 'left';
+            positionCircleRandomly(side, prevPos);
+            updateCircleVisuals();
+        }
+
+        function handleMissTap(clientX, clientY) {
+            state.score -= 1;
+            state.misses += 1;
+            state.combo = 0;
+            updateScoreHud();
+
+            sound.playMiss();
+            spawnFloatingText(clientX, clientY, '-1', false);
+
+            // 画面シェイク＆赤フラッシュ
+            playfield.classList.remove('animate-shake');
+            void playfield.offsetWidth;
+            playfield.classList.add('animate-shake');
+
+            missFlash.style.backgroundColor = 'rgba(244, 63, 94, 0.22)';
+            setTimeout(() => {
+                missFlash.style.backgroundColor = 'rgba(244, 63, 94, 0)';
+            }, 140);
+        }
+
+        // プレイフィールド全体の高速ポインターダウン判定
+        playfield.addEventListener('pointerdown', (e) => {
+            if (state.phase !== 'playing') return;
+            if (e.button !== undefined && e.button !== 0) return;
+
+            const activeCircle = state.activeSide === 'left' ? circleLeft : circleRight;
+            const rect = activeCircle.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const radius = rect.width / 2;
+
+            // タップ操作の快適さのため、視覚半径に対してわずかな許容マージン(+6px)を付与
+            const dist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
+            if (dist <= radius + 6) {
+                handleCorrectHit(state.activeSide, e.clientX, e.clientY);
+            } else {
+                handleMissTap(e.clientX, e.clientY);
+            }
+        });
+
+        // ==========================================
+        // 5. ゲーム進行フロー（カウントダウン → 10秒プレイ → リザルト）
+        // ==========================================
+        function prepareAndStartCountdown() {
+            sound.init();
+            // Android等で可能な場合は自動でフルスクリーン＆横画面ロックを試行
+            tryLockLandscape(true);
+
+            clearTimeout(state.countdownTimer);
+            cancelAnimationFrame(state.rafId);
+
+            state.phase = 'countdown';
+            state.score = 0;
+            state.hits = 0;
+            state.misses = 0;
+            state.combo = 0;
+            state.submittedCurrentGame = false;
+            // 最初は右側が濃い円、左側が薄い円でスタート
+            state.activeSide = 'right';
+
+            updateScoreHud();
+            hudTime.textContent = GAME_DURATION.toFixed(2);
+            timeBar.style.width = '100%';
+
+            startOverlay.classList.add('hidden');
+            resultModal.classList.add('hidden');
+            btnAbort.classList.remove('hidden');
+
+            // 開始前から円を配置し、画面全体に透明度70%の白オーバーレイを表示
+            positionCircleRandomly('left');
+            positionCircleRandomly('right');
+            updateCircleVisuals();
+
+            countdownOverlay.classList.remove('hidden');
+
+            let count = 3;
+            const runCountStep = () => {
+                if (state.phase !== 'countdown') return;
+                if (count > 0) {
+                    countdownNumber.textContent = String(count);
+                    countdownNumber.classList.remove('animate-count');
+                    void countdownNumber.offsetWidth;
+                    countdownNumber.classList.add('animate-count');
+                    sound.playCountdown(count);
+                    count -= 1;
+                    state.countdownTimer = setTimeout(runCountStep, 1000);
+                } else {
+                    // カウントダウン終了と同時に白いオーバーレイが消えてゲーム開始
+                    countdownOverlay.classList.add('hidden');
+                    startGameplay();
+                }
+            };
+            runCountStep();
+        }
+
+        function startGameplay() {
+            state.phase = 'playing';
+            state.startTime = performance.now();
+            sound.playStart();
+
+            const tick = (now) => {
+                if (state.phase !== 'playing') return;
+                const elapsed = (now - state.startTime) / 1000;
+                const remaining = Math.max(0, GAME_DURATION - elapsed);
+
+                hudTime.textContent = remaining.toFixed(2);
+                timeBar.style.width = `${(remaining / GAME_DURATION) * 100}%`;
+
+                if (remaining <= 0) {
+                    finishGame();
+                } else {
+                    state.rafId = requestAnimationFrame(tick);
+                }
+            };
+            state.rafId = requestAnimationFrame(tick);
+        }
+
+        function finishGame() {
+            state.phase = 'result';
+            cancelAnimationFrame(state.rafId);
+            hudTime.textContent = '0.00';
+            timeBar.style.width = '0%';
+            btnAbort.classList.add('hidden');
+
+            sound.playFinish();
+
+            // スタッツ計算
+            const totalTaps = state.hits + state.misses;
+            const accuracy = totalTaps > 0 ? Math.round((state.hits / totalTaps) * 100) : 0;
+            const tps = (state.hits / GAME_DURATION).toFixed(1);
+
+            resScore.textContent = String(state.score);
+            resHits.textContent = String(state.hits);
+            resMisses.textContent = String(state.misses);
+            resAccuracy.textContent = `${accuracy}%`;
+            resTps.textContent = `${tps}/秒`;
+
+            // スコア別評価コメント
+            if (state.score >= 45) {
+                resRankComment.textContent = '神速の反射神経！人間離れしたスピード！';
+            } else if (state.score >= 35) {
+                resRankComment.textContent = '超高速タップ！トップランカー級の実力！';
+            } else if (state.score >= 25) {
+                resRankComment.textContent = '素晴らしいリズムと正確さ！';
+            } else if (state.score >= 15) {
+                resRankComment.textContent = 'ナイスプレイ！次は30点超えを目指そう！';
+            } else {
+                resRankComment.textContent = 'まずはミスを減らしてリズムを掴もう！';
+            }
+
+            // 保存済みプレイヤー名の復元とフォーム初期化
+            const savedName = localStorage.getItem('dualtap_player_name') || '';
+            playerNameInput.value = savedName;
+            btnSubmitScore.disabled = false;
+            btnSubmitScore.textContent = '登録する';
+            submitStatus.classList.add('hidden');
+
+            resultModal.classList.remove('hidden');
+        }
+
+        function abortToTitle() {
+            clearTimeout(state.countdownTimer);
+            cancelAnimationFrame(state.rafId);
+            state.phase = 'idle';
+
+            countdownOverlay.classList.add('hidden');
+            resultModal.classList.add('hidden');
+            btnAbort.classList.add('hidden');
+            circleLeft.classList.add('hidden');
+            circleRight.classList.add('hidden');
+
+            hudTime.textContent = GAME_DURATION.toFixed(2);
+            hudScore.textContent = '0';
+            hudScore.classList.remove('text-rose-600');
+            hudScore.classList.add('text-indigo-600');
+            timeBar.style.width = '100%';
+
+            startOverlay.classList.remove('hidden');
+        }
+
+        // UIボタンイベント
+        btnStart.addEventListener('click', prepareAndStartCountdown);
+        btnRetry.addEventListener('click', prepareAndStartCountdown);
+        btnAbort.addEventListener('click', abortToTitle);
+
+        btnSound.addEventListener('click', () => {
+            const isOn = sound.toggle();
+            iconSoundOn.classList.toggle('hidden', !isOn);
+            iconSoundOff.classList.toggle('hidden', isOn);
+        });
+
+        // ==========================================
+        // 6. オンラインランキング（Firestore + ローカルフォールバック）
+        // ==========================================
+        let db = null;
+        let rankingScores = [];
+        const LOCAL_STORAGE_KEY = 'dualtap_local_leaderboard_v1';
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, (m) => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[m]));
+        }
+
+        function renderRankingList() {
+            const sorted = [...rankingScores]
+                .sort((a, b) => (b.score - a.score) || ((a.createdAt || 0) - (b.createdAt || 0)))
+                .slice(0, 20);
+
+            if (sorted.length === 0) {
+                rankingListContainer.innerHTML = `
+                    <div class="py-12 text-center text-sm font-bold text-slate-400">
+                        まだ記録がありません。最初のチャレンジャーになろう！
+                    </div>
+                `;
+                return;
+            }
+
+            rankingListContainer.innerHTML = sorted.map((item, idx) => {
+                const rank = idx + 1;
+                const isMine = state.lastSubmittedId && item.id === state.lastSubmittedId;
+                let badgeClass = 'bg-slate-100 text-slate-600';
+                if (rank === 1) badgeClass = 'bg-amber-400 text-white shadow-xs';
+                else if (rank === 2) badgeClass = 'bg-slate-400 text-white';
+                else if (rank === 3) badgeClass = 'bg-amber-700/80 text-white';
+
+                return `
+                    <div class="flex items-center justify-between px-3.5 py-2.5 rounded-2xl border ${isMine ? 'bg-indigo-50/90 border-indigo-300' : 'bg-white border-slate-100'}">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <span class="w-7 h-7 rounded-xl ${badgeClass} font-mono-num text-xs font-black flex items-center justify-center shrink-0">
+                                ${rank}
+                            </span>
+                            <div class="min-w-0">
+                                <p class="text-sm font-extrabold text-slate-800 truncate">
+                                    ${escapeHtml(item.name || 'PLAYER')}
+                                    ${isMine ? '<span class="ml-1.5 px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[10px]">YOU</span>' : ''}
+                                </p>
+                                <p class="text-[10px] font-bold text-slate-400">
+                                    HIT ${item.hits ?? '-'} / MISS ${item.misses ?? '-'}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="text-right shrink-0 ml-2">
+                            <span class="font-mono-num text-lg font-black text-indigo-600">${item.score}</span>
+                            <span class="text-[10px] font-extrabold text-slate-400 ml-0.5">PTS</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function loadLocalFallbackScores() {
+            try {
+                const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+                if (raw) {
+                    rankingScores = JSON.parse(raw);
+                } else {
+                    rankingScores = [
+                        { id: 'seed-1', name: 'SPEED_MASTER', score: 42, hits: 42, misses: 0, createdAt: 1 },
+                        { id: 'seed-2', name: 'REFLEX_PRO', score: 36, hits: 37, misses: 1, createdAt: 2 },
+                        { id: 'seed-3', name: 'TAP_NINJA', score: 31, hits: 31, misses: 0, createdAt: 3 },
+                        { id: 'seed-4', name: 'QUICK_HAND', score: 25, hits: 26, misses: 1, createdAt: 4 },
+                        { id: 'seed-5', name: 'BEGINNER', score: 18, hits: 19, misses: 1, createdAt: 5 }
+                    ];
+                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(rankingScores));
+                }
+            } catch (_) {
+                rankingScores = [];
+            }
+            renderRankingList();
+        }
+
+        async function initFirebase() {
+            try {
+                if (typeof __firebase_config === 'undefined' || !__firebase_config) {
+                    loadLocalFallbackScores();
+                    return;
+                }
+                const firebaseConfig = JSON.parse(__firebase_config);
+                const app = initializeApp(firebaseConfig);
+                const auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'dual-tap-10s';
+                const scoresCol = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+
+                onSnapshot(scoresCol, (snapshot) => {
+                    const list = [];
+                    snapshot.forEach((docSnap) => {
+                        list.push({ id: docSnap.id, ...docSnap.data() });
+                    });
+                    rankingScores = list;
+                    renderRankingList();
+                }, () => {
+                    loadLocalFallbackScores();
+                });
+            } catch (_) {
+                loadLocalFallbackScores();
+            }
+        }
+
+        btnSubmitScore.addEventListener('click', async () => {
+            if (state.submittedCurrentGame) return;
+            const rawName = playerNameInput.value.trim();
+            const playerName = (rawName || 'NO NAME').slice(0, 14);
+            localStorage.setItem('dualtap_player_name', rawName);
+
+            btnSubmitScore.disabled = true;
+            btnSubmitScore.textContent = '送信中...';
+
+            const entry = {
+                name: playerName,
+                score: state.score,
+                hits: state.hits,
+                misses: state.misses,
+                createdAt: Date.now()
+            };
+
+            try {
+                if (db) {
+                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'dual-tap-10s';
+                    const scoresCol = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+                    const docRef = await addDoc(scoresCol, entry);
+                    state.lastSubmittedId = docRef.id;
+                } else {
+                    const localId = `local-${Date.now()}`;
+                    state.lastSubmittedId = localId;
+                    rankingScores.push({ id: localId, ...entry });
+                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(rankingScores));
+                    renderRankingList();
+                }
+                state.submittedCurrentGame = true;
+                btnSubmitScore.textContent = '登録完了';
+                submitStatus.textContent = 'ランキングに登録しました！';
+                submitStatus.classList.remove('hidden');
+            } catch (_) {
+                btnSubmitScore.disabled = false;
+                btnSubmitScore.textContent = '登録する';
+                submitStatus.textContent = '登録に失敗しました。もう一度お試しください。';
+                submitStatus.classList.remove('hidden');
+            }
+        });
+
+        function openRankingModal() {
+            renderRankingList();
+            rankingModal.classList.remove('hidden');
+        }
+
+        function closeRankingModal() {
+            rankingModal.classList.add('hidden');
+        }
+
+        btnOpenRanking.addEventListener('click', openRankingModal);
+        btnResultRanking.addEventListener('click', openRankingModal);
+        btnCloseRanking.addEventListener('click', closeRankingModal);
+        btnCloseRankingBottom.addEventListener('click', closeRankingModal);
+        rankingModal.addEventListener('click', (e) => {
+            if (e.target === rankingModal) closeRankingModal();
+        });
+
+        // 画面リサイズ時に円がはみ出さないよう再調整＆画面向き判定
+        window.addEventListener('resize', () => {
+            checkOrientationState();
+            if (state.phase === 'countdown' || state.phase === 'playing') {
+                positionCircleRandomly('left');
+                positionCircleRandomly('right');
+            }
+        });
+
+        // 初期画面向きチェック＆Firebase初期化
+        checkOrientationState();
+        initFirebase();
+    </script>
+</body>
+</html>
