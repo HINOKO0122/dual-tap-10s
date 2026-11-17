@@ -462,20 +462,20 @@
                 </div>
             </div>
 
-            <!-- オンラインランキング登録フォーム -->
+            <!-- オンラインランキング登録フォーム（TOP20入りで名前掲載） -->
             <div class="mt-3 sm:mt-5 p-3 sm:p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80">
                 <label for="player-name-input" class="block text-[11px] sm:text-xs font-extrabold text-amber-900 mb-1 sm:mb-1.5">
-                    オンラインランキングにスコアを登録
+                    TOP20 オンラインランキングに名前を登録
                 </label>
                 <div class="flex gap-2">
                     <input id="player-name-input" type="text" maxlength="14" placeholder="プレイヤー名 (最大14文字)"
                         class="flex-1 min-w-0 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl bg-white border border-amber-300 text-xs sm:text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500">
                     <button id="btn-submit-score" type="button"
                         class="shrink-0 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-extrabold text-xs sm:text-sm shadow-sm transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-                        登録する
+                        TOP20に登録
                     </button>
                 </div>
-                <p id="submit-status" class="mt-1 text-[11px] sm:text-xs font-bold text-amber-800 hidden"></p>
+                <p id="submit-status" class="mt-1.5 text-[11px] sm:text-xs font-bold text-amber-800 hidden"></p>
             </div>
 
             <!-- アクションボタン -->
@@ -554,7 +554,7 @@
                         </div>
                     </div>
                     <p id="stat-total-plays" class="mt-2 pt-2 border-t border-indigo-200/60 text-[11px] font-bold text-slate-600">
-                        総プレイデータ数: --件
+                        全計測スコア総数: --回
                     </p>
                 </div>
 
@@ -562,7 +562,7 @@
                 <div>
                     <h4 class="text-xs font-extrabold text-slate-700 mb-2 flex items-center justify-between">
                         <span>スコア帯別の記録分布（上位%目安）</span>
-                        <span class="text-[10px] font-bold text-slate-400">人数 / 全体割合</span>
+                        <span class="text-[10px] font-bold text-slate-400">回数 / 全体割合</span>
                     </h4>
                     <div id="distribution-bars" class="space-y-2"></div>
                 </div>
@@ -588,9 +588,8 @@
         // ==========================================
         // ★ Google Apps Script (GAS) ウェブアプリURL設定
         // デプロイしたGASの「ウェブアプリURL（https://script.google.com/macros/s/.../exec）」をここに貼り付けてください。
-        // 空欄のままでも、ローカル記録＆デモ統計データで動作します。
         // ==========================================
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbz6BXwAVX6-qay7nqiHy7xLgMksZwcaDyW9QFIwdTjD7dxIQ2sIb2W03LsYysKuDfv2/exec";
+        const GAS_WEB_APP_URL = "";
 
         // ==========================================
         // 1. Web Audio API 効果音エンジン
@@ -685,6 +684,8 @@
             startTime: 0,
             rafId: null,
             countdownTimer: null,
+            currentPlayId: null,
+            measuredCurrentGame: false,
             submittedCurrentGame: false,
             lastSubmittedId: null
         };
@@ -711,18 +712,17 @@
         const btnRetry = document.getElementById('btn-retry');
         const btnAbort = document.getElementById('btn-abort');
         const btnSound = document.getElementById('btn-sound');
-        const btnFullscreen = document.getElementById('btn-fullscreen');
         const iconSoundOn = document.getElementById('icon-sound-on');
         const iconSoundOff = document.getElementById('icon-sound-off');
+        const btnFullscreen = document.getElementById('btn-fullscreen');
+        const btnOpenRanking = document.getElementById('btn-open-ranking');
+        const btnResultRanking = document.getElementById('btn-result-ranking');
+        const btnCloseRanking = document.getElementById('btn-close-ranking');
+        const btnCloseRankingBottom = document.getElementById('btn-close-ranking-bottom');
 
         const orientationOverlay = document.getElementById('orientation-overlay');
         const btnFullscreenLock = document.getElementById('btn-fullscreen-lock');
         const btnDismissOrientation = document.getElementById('btn-dismiss-orientation');
-
-        const btnOpenRanking = document.getElementById('btn-open-ranking');
-        const btnCloseRanking = document.getElementById('btn-close-ranking');
-        const btnCloseRankingBottom = document.getElementById('btn-close-ranking-bottom');
-        const btnResultRanking = document.getElementById('btn-result-ranking');
 
         const resScore = document.getElementById('res-score');
         const resRankComment = document.getElementById('res-rank-comment');
@@ -751,25 +751,28 @@
         // ==========================================
         let orientationDismissed = false;
 
-        async function tryLockLandscape(enterFullscreen = true) {
+        function isMobileOrTabletDevice() {
+            return ('ontouchstart' in window || navigator.maxTouchPoints > 0) &&
+                   Math.min(window.screen.width, window.screen.height) <= 920;
+        }
+
+        function isPortraitOrientation() {
+            return window.innerHeight > window.innerWidth;
+        }
+
+        async function tryLockLandscapeFullscreen() {
             try {
-                if (enterFullscreen && !document.fullscreenElement && document.documentElement.requestFullscreen) {
-                    await document.documentElement.requestFullscreen();
+                const docEl = document.documentElement;
+                if (!document.fullscreenElement && docEl.requestFullscreen) {
+                    await docEl.requestFullscreen();
+                } else if (!document.webkitFullscreenElement && docEl.webkitRequestFullscreen) {
+                    await docEl.webkitRequestFullscreen();
                 }
             } catch (_) {}
+
             try {
                 if (screen.orientation && screen.orientation.lock) {
                     await screen.orientation.lock('landscape');
-                }
-            } catch (_) {}
-        }
-
-        async function toggleFullscreenMode() {
-            try {
-                if (!document.fullscreenElement) {
-                    await tryLockLandscape(true);
-                } else if (document.exitFullscreen) {
-                    await document.exitFullscreen();
                 }
             } catch (_) {}
         }
@@ -779,10 +782,8 @@
                 orientationOverlay.classList.add('hidden');
                 return;
             }
-            const isPortrait = window.innerHeight > window.innerWidth;
-            const isMobileWidth = window.innerWidth < 900;
-
-            if (isPortrait && isMobileWidth) {
+            const shouldBlock = isMobileOrTabletDevice() && isPortraitOrientation();
+            if (shouldBlock) {
                 orientationOverlay.classList.remove('hidden');
                 if (state.phase === 'countdown' || state.phase === 'playing') {
                     abortToTitle();
@@ -793,8 +794,7 @@
         }
 
         btnFullscreenLock.addEventListener('click', async () => {
-            sound.init();
-            await tryLockLandscape(true);
+            await tryLockLandscapeFullscreen();
             checkOrientationState();
         });
 
@@ -803,59 +803,55 @@
             orientationOverlay.classList.add('hidden');
         });
 
-        btnFullscreen.addEventListener('click', toggleFullscreenMode);
+        btnFullscreen.addEventListener('click', async () => {
+            try {
+                if (document.fullscreenElement || document.webkitFullscreenElement) {
+                    if (document.exitFullscreen) await document.exitFullscreen();
+                    else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+                } else {
+                    await tryLockLandscapeFullscreen();
+                }
+            } catch (_) {}
+        });
 
         window.addEventListener('orientationchange', () => {
             setTimeout(checkOrientationState, 120);
         });
 
         // ==========================================
-        // 3. 円の配置・見た目更新ロジック
+        // 3. 円のランダム配置・状態切替ロジック
         // ==========================================
-        function getCircleDiameter() {
-            const rect = zoneLeft.getBoundingClientRect();
-            const minDim = Math.min(rect.width, rect.height);
-            return Math.max(52, Math.min(84, Math.floor(minDim * 0.25)));
+        function getCircleDiameter(zoneRect) {
+            const minDim = Math.min(zoneRect.width, zoneRect.height);
+            return Math.max(62, Math.min(94, Math.round(minDim * 0.24)));
         }
 
-        function positionCircleRandomly(side, prevPos = null) {
+        function positionCircleRandomly(side) {
             const zone = side === 'left' ? zoneLeft : zoneRight;
             const circle = side === 'left' ? circleLeft : circleRight;
             const rect = zone.getBoundingClientRect();
-            const diameter = getCircleDiameter();
+            const diameter = getCircleDiameter(rect);
             const radius = diameter / 2;
 
-            const padX = radius + 22;
-            const padTop = radius + 28;
-            const padBottom = radius + 20;
+            const padX = radius + 16;
+            const padY = radius + 24;
 
             const minX = padX;
             const maxX = Math.max(minX + 10, rect.width - padX);
-            const minY = padTop;
-            const maxY = Math.max(minY + 10, rect.height - padBottom);
+            const minY = padY;
+            const maxY = Math.max(minY + 10, rect.height - padY);
 
-            let x = minX + Math.random() * (maxX - minX);
-            let y = minY + Math.random() * (maxY - minY);
-
-            if (prevPos) {
-                for (let i = 0; i < 8; i++) {
-                    const dist = Math.hypot(x - prevPos.x, y - prevPos.y);
-                    if (dist >= diameter * 1.15) break;
-                    x = minX + Math.random() * (maxX - minX);
-                    y = minY + Math.random() * (maxY - minY);
-                }
-            }
+            const x = minX + Math.random() * (maxX - minX);
+            const y = minY + Math.random() * (maxY - minY);
 
             circle.style.width = `${diameter}px`;
             circle.style.height = `${diameter}px`;
             circle.style.left = `${x}px`;
             circle.style.top = `${y}px`;
-            circle.dataset.x = String(x);
-            circle.dataset.y = String(y);
             circle.classList.remove('hidden');
         }
 
-        function updateCircleVisuals() {
+        function syncCircleVisuals() {
             if (state.activeSide === 'right') {
                 circleRight.className = 'target-circle circle-active-right';
                 circleLeft.className = 'target-circle circle-inactive-left';
@@ -866,79 +862,46 @@
         }
 
         // ==========================================
-        // 4. ヒット・ミス演出＆タップ判定処理
+        // 4. ビジュアルフィードバック（波紋・浮遊スコア・シェイク）
         // ==========================================
-        function spawnHitRipple(side, x, y, diameter) {
+        function spawnHitEffect(side, clientX, clientY) {
+            const pfRect = playfield.getBoundingClientRect();
+            const x = clientX - pfRect.left;
+            const y = clientY - pfRect.top;
+
             const ripple = document.createElement('div');
             ripple.className = 'hit-ripple';
-            ripple.style.width = `${diameter}px`;
-            ripple.style.height = `${diameter}px`;
+            ripple.style.left = `${x}px`;
+            ripple.style.top = `${y}px`;
+            ripple.style.width = '76px';
+            ripple.style.height = '76px';
             ripple.style.border = side === 'left'
-                ? '4px solid rgba(59, 130, 246, 0.8)'
-                : '4px solid rgba(244, 63, 94, 0.8)';
-
-            const zoneRect = (side === 'left' ? zoneLeft : zoneRight).getBoundingClientRect();
-            const fieldRect = playfield.getBoundingClientRect();
-            ripple.style.left = `${(zoneRect.left - fieldRect.left) + x}px`;
-            ripple.style.top = `${(zoneRect.top - fieldRect.top) + y}px`;
-
+                ? '4px solid rgba(37, 99, 235, 0.7)'
+                : '4px solid rgba(225, 29, 72, 0.7)';
             fxLayer.appendChild(ripple);
-            setTimeout(() => ripple.remove(), 400);
+            ripple.addEventListener('animationend', () => ripple.remove());
+
+            const label = document.createElement('div');
+            label.className = `float-feedback font-mono-num text-xl sm:text-2xl ${side === 'left' ? 'text-blue-600' : 'text-rose-600'}`;
+            label.style.left = `${x}px`;
+            label.style.top = `${y - 14}px`;
+            label.textContent = '+1';
+            fxLayer.appendChild(label);
+            label.addEventListener('animationend', () => label.remove());
         }
 
-        function spawnFloatingText(clientX, clientY, text, isPositive) {
-            const fieldRect = playfield.getBoundingClientRect();
-            const el = document.createElement('div');
-            el.className = `float-feedback text-lg sm:text-xl ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`;
-            el.textContent = text;
-            el.style.left = `${clientX - fieldRect.left}px`;
-            el.style.top = `${clientY - fieldRect.top}px`;
+        function spawnMissEffect(clientX, clientY) {
+            const pfRect = playfield.getBoundingClientRect();
+            const x = clientX - pfRect.left;
+            const y = clientY - pfRect.top;
 
-            fxLayer.appendChild(el);
-            setTimeout(() => el.remove(), 560);
-        }
-
-        function updateScoreHud() {
-            hudScore.textContent = String(state.score);
-            if (state.score < 0) {
-                hudScore.classList.remove('text-indigo-600');
-                hudScore.classList.add('text-rose-600');
-            } else {
-                hudScore.classList.remove('text-rose-600');
-                hudScore.classList.add('text-indigo-600');
-            }
-        }
-
-        function handleCorrectHit(side, clientX, clientY) {
-            const circle = side === 'left' ? circleLeft : circleRight;
-            const prevPos = {
-                x: parseFloat(circle.dataset.x || '0'),
-                y: parseFloat(circle.dataset.y || '0')
-            };
-            const diameter = getCircleDiameter();
-
-            state.score += 1;
-            state.hits += 1;
-            state.combo += 1;
-            updateScoreHud();
-
-            sound.playHit(side, state.combo);
-            spawnHitRipple(side, prevPos.x, prevPos.y, diameter);
-            spawnFloatingText(clientX, clientY, '+1', true);
-
-            state.activeSide = side === 'left' ? 'right' : 'left';
-            positionCircleRandomly(side, prevPos);
-            updateCircleVisuals();
-        }
-
-        function handleMissTap(clientX, clientY) {
-            state.score -= 1;
-            state.misses += 1;
-            state.combo = 0;
-            updateScoreHud();
-
-            sound.playMiss();
-            spawnFloatingText(clientX, clientY, '-1', false);
+            const label = document.createElement('div');
+            label.className = 'float-feedback font-mono-num text-xl sm:text-2xl text-rose-600';
+            label.style.left = `${x}px`;
+            label.style.top = `${y - 10}px`;
+            label.textContent = '-1';
+            fxLayer.appendChild(label);
+            label.addEventListener('animationend', () => label.remove());
 
             playfield.classList.remove('animate-shake');
             void playfield.offsetWidth;
@@ -947,35 +910,21 @@
             missFlash.style.backgroundColor = 'rgba(244, 63, 94, 0.22)';
             setTimeout(() => {
                 missFlash.style.backgroundColor = 'rgba(244, 63, 94, 0)';
-            }, 140);
+            }, 130);
         }
 
-        playfield.addEventListener('pointerdown', (e) => {
-            if (state.phase !== 'playing') return;
-            if (e.button !== undefined && e.button !== 0) return;
-
-            const activeCircle = state.activeSide === 'left' ? circleLeft : circleRight;
-            const rect = activeCircle.getBoundingClientRect();
-            const centerX = rect.left + rect.width / 2;
-            const centerY = rect.top + rect.height / 2;
-            const radius = rect.width / 2;
-
-            const dist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
-            if (dist <= radius + 6) {
-                handleCorrectHit(state.activeSide, e.clientX, e.clientY);
-            } else {
-                handleMissTap(e.clientX, e.clientY);
-            }
-        });
+        function updateScoreHUD() {
+            hudScore.textContent = String(state.score);
+            hudScore.classList.toggle('text-rose-600', state.score < 0);
+            hudScore.classList.toggle('text-indigo-600', state.score >= 0);
+        }
 
         // ==========================================
-        // 5. ゲーム進行フロー（カウントダウン → 10秒プレイ → リザルト）
+        // 5. ゲーム進行フロー（カウントダウン → 10秒計測 → リザルト）
         // ==========================================
         function prepareAndStartCountdown() {
             sound.init();
-            tryLockLandscape(true);
-
-            clearTimeout(state.countdownTimer);
+            clearInterval(state.countdownTimer);
             cancelAnimationFrame(state.rafId);
 
             state.phase = 'countdown';
@@ -983,43 +932,52 @@
             state.hits = 0;
             state.misses = 0;
             state.combo = 0;
+            state.currentPlayId = `rec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            state.measuredCurrentGame = false;
             state.submittedCurrentGame = false;
             state.activeSide = 'right';
 
-            updateScoreHud();
+            updateScoreHUD();
             hudTime.textContent = GAME_DURATION.toFixed(2);
             timeBar.style.width = '100%';
 
             startOverlay.classList.add('hidden');
             resultModal.classList.add('hidden');
+            rankingModal.classList.add('hidden');
             btnAbort.classList.remove('hidden');
 
+            // 開始前から円を配置し、画面全体に透明度70%の白オーバーレイを表示
             positionCircleRandomly('left');
             positionCircleRandomly('right');
-            updateCircleVisuals();
-
-            countdownOverlay.classList.remove('hidden');
+            syncCircleVisuals();
 
             let count = 3;
-            const runCountStep = () => {
-                if (state.phase !== 'countdown') return;
+            countdownOverlay.classList.remove('hidden');
+            triggerCountdownDigit(count);
+            sound.playCountdown(count);
+
+            state.countdownTimer = setInterval(() => {
+                count -= 1;
                 if (count > 0) {
-                    countdownNumber.textContent = String(count);
-                    countdownNumber.classList.remove('animate-count');
-                    void countdownNumber.offsetWidth;
-                    countdownNumber.classList.add('animate-count');
+                    triggerCountdownDigit(count);
                     sound.playCountdown(count);
-                    count -= 1;
-                    state.countdownTimer = setTimeout(runCountStep, 1000);
                 } else {
-                    countdownOverlay.classList.add('hidden');
-                    startGameplay();
+                    clearInterval(state.countdownTimer);
+                    beginGameplay();
                 }
-            };
-            runCountStep();
+            }, 1000);
         }
 
-        function startGameplay() {
+        function triggerCountdownDigit(num) {
+            countdownNumber.textContent = String(num);
+            countdownNumber.classList.remove('animate-count');
+            void countdownNumber.offsetWidth;
+            countdownNumber.classList.add('animate-count');
+        }
+
+        function beginGameplay() {
+            // 開始と同時に70%白オーバーレイが消えてゲーム開始
+            countdownOverlay.classList.add('hidden');
             state.phase = 'playing';
             state.startTime = performance.now();
             sound.playStart();
@@ -1038,6 +996,7 @@
                     state.rafId = requestAnimationFrame(tick);
                 }
             };
+
             state.rafId = requestAnimationFrame(tick);
         }
 
@@ -1052,13 +1011,18 @@
 
             const totalTaps = state.hits + state.misses;
             const accuracy = totalTaps > 0 ? Math.round((state.hits / totalTaps) * 100) : 0;
+            const playedAt = Date.now();
 
             resScore.textContent = String(state.score);
             resHits.textContent = String(state.hits);
             resMisses.textContent = String(state.misses);
             resAccuracy.textContent = `${accuracy}%`;
 
-            // 現在の全スコアデータから「上位何%か」を算出＆自己履歴へ自動記録
+            // 今回のスコアをローカルのスコア別分布（人数カウント）へ即時加算
+            incrementLocalDistribution(state.score);
+            state.measuredCurrentGame = true;
+
+            // 全計測スコア分布から「上位何%か」を算出＆自己履歴へ自動記録
             const topPercent = calculateTopPercentile(state.score);
             resPercentile.textContent = `上位 ${topPercent}%`;
             recordPersonalPlay({
@@ -1066,51 +1030,106 @@
                 hits: state.hits,
                 misses: state.misses,
                 topPercent,
-                createdAt: Date.now()
+                createdAt: playedAt
             });
 
-            if (topPercent <= 5) {
-                resRankComment.textContent = `全プレイヤー中 上位 ${topPercent}%！神速の反射神経！`;
-            } else if (topPercent <= 15) {
-                resRankComment.textContent = `全プレイヤー中 上位 ${topPercent}%！トップランカー級の実力！`;
-            } else if (topPercent <= 40) {
-                resRankComment.textContent = `全プレイヤー中 上位 ${topPercent}%！素晴らしいリズムと正確さ！`;
-            } else if (topPercent <= 70) {
-                resRankComment.textContent = `全プレイヤー中 上位 ${topPercent}%！次は上位30%を目指そう！`;
-            } else {
-                resRankComment.textContent = `全プレイヤー中 上位 ${topPercent}%！まずはミスを減らして記録更新しよう！`;
-            }
+            updateResultRankComment(topPercent);
 
             const savedName = localStorage.getItem('dualtap_player_name') || '';
             playerNameInput.value = savedName;
+
+            const qualifiesTop20 = checkQualifiesForTop20(state.score);
             btnSubmitScore.disabled = false;
-            btnSubmitScore.textContent = '登録する';
+            btnSubmitScore.textContent = qualifiesTop20 ? 'TOP20に登録' : '記録を送信';
             submitStatus.classList.add('hidden');
 
             resultModal.classList.remove('hidden');
+
+            // ランキング未登録でもスコアのみ自動送信してサーバー側の分布＆上位%を同期
+            autoSendScoreMeasurement(state.score);
+        }
+
+        function updateResultRankComment(topPercent) {
+            if (topPercent <= 5) {
+                resRankComment.textContent = `全計測スコア中 上位 ${topPercent}%！神速の反射神経！`;
+            } else if (topPercent <= 15) {
+                resRankComment.textContent = `全計測スコア中 上位 ${topPercent}%！トップランカー級の実力！`;
+            } else if (topPercent <= 40) {
+                resRankComment.textContent = `全計測スコア中 上位 ${topPercent}%！素晴らしいリズムと正確さ！`;
+            } else if (topPercent <= 70) {
+                resRankComment.textContent = `全計測スコア中 上位 ${topPercent}%！次は上位30%を目指そう！`;
+            } else {
+                resRankComment.textContent = `全計測スコア中 上位 ${topPercent}%！ミスを減らして記録更新しよう！`;
+            }
         }
 
         function abortToTitle() {
-            clearTimeout(state.countdownTimer);
+            clearInterval(state.countdownTimer);
             cancelAnimationFrame(state.rafId);
             state.phase = 'idle';
 
             countdownOverlay.classList.add('hidden');
             resultModal.classList.add('hidden');
-            btnAbort.classList.add('hidden');
             circleLeft.classList.add('hidden');
             circleRight.classList.add('hidden');
+            btnAbort.classList.add('hidden');
 
+            state.score = 0;
+            updateScoreHUD();
             hudTime.textContent = GAME_DURATION.toFixed(2);
-            hudScore.textContent = '0';
-            hudScore.classList.remove('text-rose-600');
-            hudScore.classList.add('text-indigo-600');
             timeBar.style.width = '100%';
-
             startOverlay.classList.remove('hidden');
         }
 
-        btnStart.addEventListener('click', prepareAndStartCountdown);
+        // ==========================================
+        // 5.5 低遅延ポインター入力判定（濃い円のみ有効 / それ以外はミス減点）
+        // ==========================================
+        playfield.addEventListener('pointerdown', (e) => {
+            if (state.phase !== 'playing') return;
+            e.preventDefault();
+
+            const activeCircle = state.activeSide === 'left' ? circleLeft : circleRight;
+            const rect = activeCircle.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const radius = rect.width / 2;
+
+            // 指の太さを考慮したわずかな許容マージン (+6px)
+            const dist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
+            if (dist <= radius + 6) {
+                // 正解タップ
+                const tappedSide = state.activeSide;
+                state.score += 1;
+                state.hits += 1;
+                state.combo += 1;
+
+                updateScoreHUD();
+                sound.playHit(tappedSide, state.combo);
+                spawnHitEffect(tappedSide, centerX, centerY);
+
+                // 反対側を濃い円に切り替え、押された側は消えて新しいランダム位置に薄い円を再配置
+                state.activeSide = tappedSide === 'left' ? 'right' : 'left';
+                positionCircleRandomly(tappedSide);
+                syncCircleVisuals();
+            } else {
+                // 円以外（または薄い円）をタップ → ミス減点
+                state.score -= 1;
+                state.misses += 1;
+                state.combo = 0;
+
+                updateScoreHUD();
+                sound.playMiss();
+                spawnMissEffect(e.clientX, e.clientY);
+            }
+        }, { passive: false });
+
+        btnStart.addEventListener('click', async () => {
+            if (isMobileOrTabletDevice()) {
+                await tryLockLandscapeFullscreen();
+            }
+            prepareAndStartCountdown();
+        });
+
         btnRetry.addEventListener('click', prepareAndStartCountdown);
         btnAbort.addEventListener('click', abortToTitle);
 
@@ -1121,10 +1140,12 @@
         });
 
         // ==========================================
-        // 6. オンラインランキング & スコア別分布・上位%集計（GAS連携）
+        // 6. 軽量オンラインランキング（TOP20限定） & スコア別分布・上位%集計
         // ==========================================
-        let allScoreRecords = [];
-        const LOCAL_STORAGE_KEY = 'dualtap_gas_cache_v1';
+        let top20Records = [];       // 名前付きランキング上位20件のみ
+        let scoreDistribution = {};  // { "スコア": 人数 } の軽量マップ
+        const LOCAL_TOP20_KEY = 'dualtap_top20_cache_v2';
+        const LOCAL_DIST_KEY = 'dualtap_dist_cache_v2';
         const PERSONAL_HISTORY_KEY = 'dualtap_personal_history_v1';
 
         function escapeHtml(str) {
@@ -1137,10 +1158,40 @@
             }[m]));
         }
 
+        function getTotalMeasuredCount() {
+            return Object.values(scoreDistribution).reduce((sum, c) => sum + (Number(c) || 0), 0);
+        }
+
+        function incrementLocalDistribution(score) {
+            const key = String(Number(score) || 0);
+            scoreDistribution[key] = (Number(scoreDistribution[key]) || 0) + 1;
+            saveCacheToLocal();
+        }
+
+        function saveCacheToLocal() {
+            try {
+                localStorage.setItem(LOCAL_TOP20_KEY, JSON.stringify(top20Records));
+                localStorage.setItem(LOCAL_DIST_KEY, JSON.stringify(scoreDistribution));
+            } catch (_) {}
+        }
+
+        function checkQualifiesForTop20(score) {
+            if (top20Records.length < 20) return true;
+            const lowestTop20 = top20Records[top20Records.length - 1];
+            return Number(score) > Number(lowestTop20.score);
+        }
+
+        // スコア別人数マップから「上位何%か」を高速計算
         function calculateTopPercentile(targetScore) {
-            if (!allScoreRecords || allScoreRecords.length === 0) return 1.0;
-            const total = allScoreRecords.length;
-            const higherCount = allScoreRecords.filter(r => Number(r.score) > Number(targetScore)).length;
+            const total = getTotalMeasuredCount();
+            if (total <= 0) return 1.0;
+
+            let higherCount = 0;
+            for (const [scoreStr, count] of Object.entries(scoreDistribution)) {
+                if (Number(scoreStr) > Number(targetScore)) {
+                    higherCount += Number(count) || 0;
+                }
+            }
             const rawPercent = ((higherCount + 1) / (total + 1)) * 100;
             const clamped = Math.max(0.1, Math.min(100, rawPercent));
             return clamped < 10 ? Number(clamped.toFixed(1)) : Math.round(clamped);
@@ -1163,14 +1214,14 @@
         }
 
         function renderRankingList() {
-            const sorted = [...allScoreRecords]
+            const sorted = [...top20Records]
                 .sort((a, b) => (Number(b.score) - Number(a.score)) || (Number(a.createdAt || 0) - Number(b.createdAt || 0)))
                 .slice(0, 20);
 
             if (sorted.length === 0) {
                 rankingListContainer.innerHTML = `
                     <div class="py-12 text-center text-sm font-bold text-slate-400">
-                        まだ記録がありません。最初のチャレンジャーになろう！
+                        まだTOP20登録者がいません。最初のチャレンジャーになろう！
                     </div>
                 `;
                 return;
@@ -1197,7 +1248,7 @@
                                     ${isMine ? '<span class="ml-1.5 px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[10px]">YOU</span>' : ''}
                                 </p>
                                 <p class="text-[10px] font-bold text-slate-400">
-                                    HIT ${item.hits ?? '-'} / MISS ${item.misses ?? '-'} ・ 上位${topPct}%
+                                    HIT ${item.hits ?? '-'} / MISS ${item.misses ?? '-'} ・ 全計測中 上位${topPct}%
                                 </p>
                             </div>
                         </div>
@@ -1211,8 +1262,8 @@
         }
 
         function renderDistributionAndHistory() {
-            const total = allScoreRecords.length;
-            statTotalPlays.textContent = `集計データ総数: ${total}件（${GAS_WEB_APP_URL ? 'GASオンライン同期中' : 'ローカルモード'}）`;
+            const total = getTotalMeasuredCount();
+            statTotalPlays.textContent = `全計測スコア総数: ${total}回（上位20名のみランキング保持）`;
 
             const history = getPersonalHistory();
             const bestRecord = history.reduce((best, cur) => (!best || cur.score > best.score) ? cur : best, null);
@@ -1234,9 +1285,14 @@
                 { label: '14点以下 (入門)', min: -9999, max: 14, color: 'bg-slate-400' }
             ];
 
-            const counts = buckets.map(b =>
-                allScoreRecords.filter(r => Number(r.score) >= b.min && Number(r.score) <= b.max).length
-            );
+            const counts = buckets.map(b => {
+                let sum = 0;
+                for (const [scoreStr, cnt] of Object.entries(scoreDistribution)) {
+                    const s = Number(scoreStr);
+                    if (s >= b.min && s <= b.max) sum += Number(cnt) || 0;
+                }
+                return sum;
+            });
             const maxCount = Math.max(1, ...counts);
 
             distributionBars.innerHTML = buckets.map((b, i) => {
@@ -1252,7 +1308,7 @@
                                 ${b.label}
                                 ${isUserBucket ? '<span class="px-1.5 py-0.2 rounded bg-indigo-600 text-white text-[9px]">YOUR BEST</span>' : ''}
                             </span>
-                            <span class="font-mono-num text-slate-600">${count}人 (${sharePct}%)</span>
+                            <span class="font-mono-num text-slate-600">${count}回 (${sharePct}%)</span>
                         </div>
                         <div class="w-full h-2 rounded-full bg-slate-200/80 overflow-hidden">
                             <div class="h-full ${b.color} rounded-full transition-all duration-300" style="width: ${barWidth}%;"></div>
@@ -1289,31 +1345,71 @@
 
         function loadLocalSeedScores() {
             try {
-                const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-                if (raw) {
-                    allScoreRecords = JSON.parse(raw);
+                const rawTop20 = localStorage.getItem(LOCAL_TOP20_KEY);
+                const rawDist = localStorage.getItem(LOCAL_DIST_KEY);
+                if (rawTop20 && rawDist) {
+                    top20Records = JSON.parse(rawTop20);
+                    scoreDistribution = JSON.parse(rawDist);
                 } else {
-                    allScoreRecords = [
+                    top20Records = [
                         { id: 'seed-1', name: 'SPEED_MASTER', score: 46, hits: 46, misses: 0, createdAt: 1 },
                         { id: 'seed-2', name: 'REFLEX_PRO', score: 39, hits: 39, misses: 0, createdAt: 2 },
                         { id: 'seed-3', name: 'TAP_NINJA', score: 33, hits: 34, misses: 1, createdAt: 3 },
                         { id: 'seed-4', name: 'QUICK_HAND', score: 28, hits: 28, misses: 0, createdAt: 4 },
-                        { id: 'seed-5', name: 'RHYTHM_ACE', score: 24, hits: 25, misses: 1, createdAt: 5 },
-                        { id: 'seed-6', name: 'CHALLENGER', score: 19, hits: 20, misses: 1, createdAt: 6 },
-                        { id: 'seed-7', name: 'BEGINNER', score: 13, hits: 15, misses: 2, createdAt: 7 }
+                        { id: 'seed-5', name: 'RHYTHM_ACE', score: 24, hits: 25, misses: 1, createdAt: 5 }
                     ];
-                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allScoreRecords));
+                    scoreDistribution = { "46": 1, "39": 2, "33": 4, "28": 6, "24": 8, "19": 5, "13": 3 };
+                    saveCacheToLocal();
                 }
             } catch (_) {
-                allScoreRecords = [];
+                top20Records = [];
+                scoreDistribution = {};
             }
             renderRankingList();
             renderDistributionAndHistory();
         }
 
+        // ゲーム終了時にスコア数値だけを軽量POST送信（名前未登録でも分布＆上位%に反映）
+        async function autoSendScoreMeasurement(scoreValue) {
+            if (!GAS_WEB_APP_URL) {
+                submitStatus.textContent = '※スコアは自動計測されました（TOP20入りで名前掲載）';
+                submitStatus.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const res = await fetch(GAS_WEB_APP_URL, {
+                    method: 'POST',
+                    redirect: 'follow',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({
+                        action: 'recordPlay',
+                        score: scoreValue
+                    })
+                });
+                const result = await res.json();
+                if (result && result.status === 'ok') {
+                    if (Array.isArray(result.top20)) top20Records = result.top20;
+                    if (result.distribution) scoreDistribution = result.distribution;
+                    saveCacheToLocal();
+
+                    const liveTopPct = calculateTopPercentile(scoreValue);
+                    resPercentile.textContent = `上位 ${liveTopPct}%`;
+                    updateResultRankComment(liveTopPct);
+                    renderRankingList();
+                    renderDistributionAndHistory();
+                }
+                if (!state.submittedCurrentGame) {
+                    const total = getTotalMeasuredCount();
+                    submitStatus.textContent = `全${total}回の計測データに自動反映済み（TOP20入りで名前登録可）`;
+                    submitStatus.classList.remove('hidden');
+                }
+            } catch (_) {}
+        }
+
         async function fetchScoresFromGAS() {
             if (!GAS_WEB_APP_URL) {
-                rankingSubtitle.textContent = '10秒モード ローカル集計（GAS URL未設定）';
+                rankingSubtitle.textContent = 'ローカル集計モード（GAS URL未設定）';
                 loadLocalSeedScores();
                 return;
             }
@@ -1325,10 +1421,13 @@
                     redirect: 'follow'
                 });
                 const data = await res.json();
-                if (data && Array.isArray(data.records)) {
-                    allScoreRecords = data.records;
-                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allScoreRecords));
-                    rankingSubtitle.textContent = `10秒モード オンライン全${allScoreRecords.length}件集計`;
+                if (data && data.status === 'ok') {
+                    if (Array.isArray(data.top20)) top20Records = data.top20;
+                    if (data.distribution) scoreDistribution = data.distribution;
+                    saveCacheToLocal();
+
+                    const total = getTotalMeasuredCount();
+                    rankingSubtitle.textContent = `全${total}回の計測スコアから上位%を算出中`;
                     renderRankingList();
                     renderDistributionAndHistory();
                 } else {
@@ -1340,6 +1439,7 @@
             }
         }
 
+        // 名前付きランキング登録（TOP20入りした場合のみ保存され、21位以下は自動破棄）
         btnSubmitScore.addEventListener('click', async () => {
             if (state.submittedCurrentGame) return;
             const rawName = playerNameInput.value.trim();
@@ -1347,10 +1447,11 @@
             localStorage.setItem('dualtap_player_name', rawName);
 
             btnSubmitScore.disabled = true;
-            btnSubmitScore.textContent = '送信中...';
+            btnSubmitScore.textContent = '判定中...';
 
+            const playId = state.currentPlayId || `rec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
             const entry = {
-                id: `rec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                id: playId,
                 name: playerName,
                 score: state.score,
                 hits: state.hits,
@@ -1359,46 +1460,53 @@
             };
 
             try {
+                let inTop20 = false;
                 if (GAS_WEB_APP_URL) {
                     const res = await fetch(GAS_WEB_APP_URL, {
                         method: 'POST',
                         redirect: 'follow',
-                        headers: {
-                            'Content-Type': 'text/plain;charset=utf-8'
-                        },
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({
                             action: 'submitScore',
+                            alreadyRecorded: state.measuredCurrentGame,
                             ...entry
                         })
                     });
                     const result = await res.json();
-                    if (result && Array.isArray(result.records)) {
-                        allScoreRecords = result.records;
-                        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allScoreRecords));
-                    } else {
-                        allScoreRecords.push(entry);
+                    if (result && result.status === 'ok') {
+                        if (Array.isArray(result.top20)) top20Records = result.top20;
+                        if (result.distribution) scoreDistribution = result.distribution;
+                        inTop20 = Boolean(result.inTop20);
+                        saveCacheToLocal();
                     }
-                    state.lastSubmittedId = entry.id;
-                    const updatedTopPct = calculateTopPercentile(state.score);
-                    resPercentile.textContent = `上位 ${updatedTopPct}%`;
-                    submitStatus.textContent = `GASオンラインランキングに登録完了！（全体 上位 ${updatedTopPct}%）`;
                 } else {
-                    state.lastSubmittedId = entry.id;
-                    allScoreRecords.push(entry);
-                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allScoreRecords));
-                    const updatedTopPct = calculateTopPercentile(state.score);
-                    resPercentile.textContent = `上位 ${updatedTopPct}%`;
-                    submitStatus.textContent = `記録を保存しました！（集計データ内 上位 ${updatedTopPct}%）`;
+                    top20Records.push(entry);
+                    top20Records = top20Records
+                        .sort((a, b) => (Number(b.score) - Number(a.score)) || (Number(a.createdAt || 0) - Number(b.createdAt || 0)))
+                        .slice(0, 20);
+                    inTop20 = top20Records.some(item => item.id === playId);
+                    saveCacheToLocal();
+                }
+
+                const updatedTopPct = calculateTopPercentile(state.score);
+                resPercentile.textContent = `上位 ${updatedTopPct}%`;
+
+                if (inTop20) {
+                    state.lastSubmittedId = playId;
+                    submitStatus.textContent = `🎉 TOP20ランクイン！名前付きでランキングに掲載されました（上位 ${updatedTopPct}%）`;
+                    btnSubmitScore.textContent = 'TOP20掲載済';
+                } else {
+                    submitStatus.textContent = `TOP20圏外のため名前データは自動削除されました（スコア計測のみ保持・上位 ${updatedTopPct}%）`;
+                    btnSubmitScore.textContent = 'TOP20圏外';
                 }
 
                 renderRankingList();
                 renderDistributionAndHistory();
                 state.submittedCurrentGame = true;
-                btnSubmitScore.textContent = '登録完了';
                 submitStatus.classList.remove('hidden');
             } catch (_) {
                 btnSubmitScore.disabled = false;
-                btnSubmitScore.textContent = '登録する';
+                btnSubmitScore.textContent = 'TOP20に登録';
                 submitStatus.textContent = 'GASへの送信に失敗しました。URLとデプロイ設定を確認してください。';
                 submitStatus.classList.remove('hidden');
             }
